@@ -4,6 +4,7 @@ import { beforeAll, afterAll, jest } from '@jest/globals';
 process.env.NODE_ENV = 'test';
 process.env.PORT = '3099';
 process.env.CORS_ORIGIN = 'http://localhost:3000';
+process.env.JWT_SECRET = 'test-jwt-secret-do-not-use-in-production';
 
 // Suppress noisy Express internal error logs during tests
 const originalConsoleError = console.error;
