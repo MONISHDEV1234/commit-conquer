@@ -523,9 +523,10 @@ function SkeletonCard() {
 
 
 export default function StorefrontPage() {
-  const { itemCount } = useCartState();
-  
-  const dispatch = useCartDispatch() as any;
+  const cartState = useCartState() as any;
+  const dispatch  = useCartDispatch() as any;
+
+  const itemCount = cartState?.count ?? 0;
 
   const [cartOpen, setCartOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -570,13 +571,17 @@ export default function StorefrontPage() {
   const total = data?.pages[0]?.total ?? 0;
 
   const handleAddToCart = useCallback((product: Product) => {
-    dispatch.addItem({
-      id: product.id,
-      title: product.title,
-      price: Math.round(product.price * 100), // Convert dollars to cents for the backend
-      thumbnail: product.thumbnail,
-      quantity: 1,
+    dispatch({
+      type: "ADD_ITEM",
+      payload: {
+        id: product.id,
+        title: product.title,
+        price: product.price,
+        thumbnail: product.thumbnail,
+        quantity: 1,
+      },
     });
+    dispatch({ type: "TOGGLE_CART", payload: true });
     setToast(`${product.title} added to cart`);
     setTimeout(() => setToast(null), 2200);
   }, [dispatch]);
@@ -614,7 +619,7 @@ export default function StorefrontPage() {
           <a href="/about" className="nav-link">About</a>
         </div>
         <div className="nav-actions">
-          <button className="cart-btn" onClick={() => setCartOpen(true)}>
+          <button className="cart-btn" onClick={() => dispatch({ type: "TOGGLE_CART", payload: true })}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/>
             </svg>
@@ -810,7 +815,7 @@ export default function StorefrontPage() {
       </div>
 
       
-      {cartOpen && <CartDrawer />}
+      <CartDrawer />
 
       
       {toast && (
