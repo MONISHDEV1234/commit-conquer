@@ -10,6 +10,13 @@ const CartDispatchCtx = createContext(null);
 
 const API = "http://localhost:4000/api/store";
 
+export function CartProvider({ children }) {
+  const [state, dispatch] = useReducer(cartReducer, { items: [], isOpen: false });
+  const derived = {
+    ...state,
+    count: state.items.reduce((n, i) => n + i.quantity, 0),
+    total: state.items.reduce((s, i) => s + i.price * i.quantity, 0),
+  };
 function CartProvider({ children }) {
   const qc = useQueryClient();
   const [isOpen, setIsOpen] = useState(false);
@@ -222,15 +229,13 @@ function Footer() {
 
 export default function Layout() {
   return (
-    <CartProvider>
-      <div style={s.root}>
-        <Header />
-        <main style={s.main}>
-          <Outlet />   {/* React Router renders child page here */}
-        </main>
-        <Footer />
-      </div>
-    </CartProvider>
+    <div style={s.root}>
+      <Header />
+      <main style={s.main}>
+        <Outlet />   {/* React Router renders child page here */}
+      </main>
+      <Footer />
+    </div>
   );
 }
 
