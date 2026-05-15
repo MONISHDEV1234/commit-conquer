@@ -2,6 +2,7 @@
 // Wraps all /admin/* routes with sidebar navigation
 
 import { NavLink, Outlet, Link } from "react-router-dom";
+import { useTheme } from "../../ThemeContext";
 
 const NAV = [
   { to: "/admin",          label: "Dashboard", icon: "⬡", end: true },
@@ -10,12 +11,21 @@ const NAV = [
 ];
 
 export default function AdminLayout() {
+  const { isDark, toggleTheme } = useTheme();
+
+  const rootStyle = { ...s.root, background: isDark ? "#0c0c0e" : "#f0f0f5", color: isDark ? "#e8e8f0" : "#111118" };
+  const sidebarStyle = { ...s.sidebar, background: isDark ? "#0a0a0c" : "#ffffff", borderRight: `1px solid ${isDark ? "#1c1c21" : "#e0e0e8"}` };
+  const logoWrapStyle = { ...s.logoWrap, borderBottom: `1px solid ${isDark ? "#1c1c21" : "#e0e0e8"}` };
+  const logoStyle = { ...s.logo, color: isDark ? "#e8e8f0" : "#111118" };
+  const sidebarFooterStyle = { ...s.sidebarFooter, borderTop: `1px solid ${isDark ? "#1c1c21" : "#e0e0e8"}` };
+  const backLinkStyle = { ...s.backLink, color: isDark ? "#555" : "#888" };
+
   return (
-    <div style={s.root}>
+    <div style={rootStyle}>
       {/* Sidebar */}
-      <aside style={s.sidebar}>
-        <div style={s.logoWrap}>
-          <Link to="/" style={s.logo}>commit&amp;conquer</Link>
+      <aside style={sidebarStyle}>
+        <div style={logoWrapStyle}>
+          <Link to="/" style={logoStyle}>commit&amp;conquer</Link>
           <span style={s.badge}>Admin</span>
         </div>
 
@@ -28,7 +38,7 @@ export default function AdminLayout() {
               style={({ isActive }: { isActive: boolean }) => ({
                 ...s.navItem,
                 background: isActive ? "rgba(124,106,255,0.15)" : "transparent",
-                color:      isActive ? "#7c6aff" : "#888",
+                color:      isActive ? "#7c6aff" : isDark ? "#888" : "#666",
               })}
             >
               <span style={s.navIcon}>{item.icon}</span>
@@ -37,8 +47,44 @@ export default function AdminLayout() {
           ))}
         </nav>
 
-        <div style={s.sidebarFooter}>
-          <Link to="/" style={s.backLink}>← Back to Store</Link>
+        <div style={sidebarFooterStyle}>
+          {/* Theme Toggle */}
+          <button
+            id="admin-theme-toggle-btn"
+            onClick={toggleTheme}
+            aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              width: "100%", marginBottom: 10,
+              background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)",
+              border: `1px solid ${isDark ? "#2a2a31" : "#ddd"}`,
+              cursor: "pointer",
+              color: isDark ? "#ccc" : "#444",
+              padding: "7px 12px",
+              borderRadius: 8,
+              fontSize: 13,
+              fontWeight: 500,
+              transition: "all 0.2s",
+            }}
+          >
+            {isDark ? (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="5"/>
+                  <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                </svg>
+                Light Mode
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+                </svg>
+                Dark Mode
+              </>
+            )}
+          </button>
+          <Link to="/" style={backLinkStyle}>← Back to Store</Link>
         </div>
       </aside>
 

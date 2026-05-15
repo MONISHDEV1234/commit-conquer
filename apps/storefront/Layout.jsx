@@ -11,6 +11,7 @@
 
 import { createContext, useContext, useReducer } from "react";
 import { Outlet, Link, NavLink, useNavigate } from "react-router-dom";
+import { useTheme } from "./ThemeContext";
 
 // ─── Cart Context & Reducer ────────────────────────────────────────────────────
 
@@ -86,18 +87,35 @@ function Header() {
   const cart     = useCartState();
   const dispatch = useCartDispatch();
   const navigate = useNavigate();
+  const { theme, toggleTheme, isDark } = useTheme();
 
   const navStyle = ({ isActive }) => ({
     textDecoration: "none",
-    color: isActive ? "#7c6aff" : "#aaa",
+    color: isActive ? "#7c6aff" : isDark ? "#aaa" : "#666",
     fontSize: 14,
     fontWeight: 500,
     transition: "color 0.15s",
   });
 
+  const headerStyle = {
+    ...s.header,
+    background: isDark ? "rgba(12,12,14,0.9)" : "rgba(245,245,247,0.9)",
+    borderBottom: `1px solid ${isDark ? "#2a2a31" : "#e0e0e8"}`,
+  };
+
+  const logoStyle = {
+    ...s.logo,
+    color: isDark ? "#e8e8f0" : "#111118",
+  };
+
+  const cartBtnStyle = {
+    ...s.cartBtn,
+    color: isDark ? "#e8e8f0" : "#111118",
+  };
+
   return (
-    <header style={s.header}>
-      <Link to="/" style={s.logo}>commit&amp;conquer</Link>
+    <header style={headerStyle}>
+      <Link to="/" style={logoStyle}>commit&amp;conquer</Link>
 
       <nav style={s.nav}>
         <NavLink to="/"           end style={navStyle}>Shop</NavLink>
@@ -107,14 +125,54 @@ function Header() {
         {/* Admin link — for hackathon convenience */}
         <NavLink to="/admin"          style={({ isActive }) => ({
           ...navStyle({ isActive }),
-          background: isActive ? "rgba(124,106,255,0.15)" : "rgba(255,255,255,0.05)",
+          background: isActive ? "rgba(124,106,255,0.15)" : isDark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)",
           padding: "4px 10px", borderRadius: 6, fontSize: 13,
         })}>Admin ↗</NavLink>
       </nav>
 
+      {/* ── Theme Toggle ── */}
+      <button
+        id="theme-toggle-btn"
+        onClick={toggleTheme}
+        aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
+        title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+        style={{
+          background: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)",
+          border: `1px solid ${isDark ? "#2a2a31" : "#ddd"}`,
+          cursor: "pointer",
+          color: isDark ? "#e8e8f0" : "#333",
+          padding: "6px 10px",
+          borderRadius: 8,
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 13,
+          fontWeight: 500,
+          transition: "all 0.2s",
+          marginLeft: 4,
+        }}
+      >
+        {isDark ? (
+          <>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="5"/>
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+            Light
+          </>
+        ) : (
+          <>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+            </svg>
+            Dark
+          </>
+        )}
+      </button>
+
       <button
         onClick={() => dispatch({ type: "TOGGLE_CART", payload: true })}
-        style={s.cartBtn}
+        style={cartBtnStyle}
         aria-label="Open cart"
       >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -131,14 +189,15 @@ function Header() {
 // ─── Footer ───────────────────────────────────────────────────────────────────
 
 function Footer() {
+  const { isDark } = useTheme();
   return (
-    <footer style={s.footer}>
+    <footer style={{ ...s.footer, borderTop: `1px solid ${isDark ? "#1c1c21" : "#e8e8f0"}` }}>
       <div style={s.footerInner}>
-        <span style={{ color: "#555", fontSize: 13 }}>© {new Date().getFullYear()} Commit &amp; Conquer</span>
+        <span style={{ color: isDark ? "#555" : "#999", fontSize: 13 }}>© {new Date().getFullYear()} Commit &amp; Conquer</span>
         <div style={{ display: "flex", gap: 20 }}>
-          <Link to="/about"       style={s.footerLink}>About</Link>
-          <Link to="/collections" style={s.footerLink}>Collections</Link>
-          <Link to="/account"     style={s.footerLink}>Account</Link>
+          <Link to="/about"       style={{ ...s.footerLink, color: isDark ? "#555" : "#888" }}>About</Link>
+          <Link to="/collections" style={{ ...s.footerLink, color: isDark ? "#555" : "#888" }}>Collections</Link>
+          <Link to="/account"     style={{ ...s.footerLink, color: isDark ? "#555" : "#888" }}>Account</Link>
         </div>
       </div>
     </footer>
@@ -148,9 +207,10 @@ function Footer() {
 // ─── Root Layout ──────────────────────────────────────────────────────────────
 
 export default function Layout() {
+  const { isDark } = useTheme();
   return (
     <CartProvider>
-      <div style={s.root}>
+      <div style={{ ...s.root, background: isDark ? "#0c0c0e" : "#f5f5f7", color: isDark ? "#e8e8f0" : "#111118" }}>
         <Header />
         <main style={s.main}>
           <Outlet />   {/* React Router renders child page here */}
