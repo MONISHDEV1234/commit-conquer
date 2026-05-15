@@ -4,6 +4,7 @@
 
 import { Request, Response, NextFunction } from 'express';
 import { AppError } from './errorHandler';
+import { getJwtSecret } from '../config/env';
 
 export interface AuthenticatedRequest extends Request {
   user?: { id: string; username: string };
@@ -26,8 +27,12 @@ export function authenticate(
     return next(new AppError('Unauthorized', 401));
   }
 
-  // Stub: any non-empty, non-"invalid" Bearer token is accepted.
-  // Replace this block with real JWT/token verification when ready.
+  // Enforce that JWT_SECRET is present — getJwtSecret() will process.exit(1)
+  // in non-test environments if it is missing (no hardcoded fallback).
+  const _secret = getJwtSecret();
+
+  // Stub: replace with real jwt.verify(token, _secret) when jsonwebtoken is wired in.
+  // In production: import jwt from 'jsonwebtoken'; const payload = jwt.verify(token, _secret);
   req.user = { id: 'user-1', username: 'alice' };
   next();
-}
+}
