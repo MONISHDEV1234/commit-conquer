@@ -285,15 +285,34 @@ export const PaymentService = {
     rawBody: string,
     signature: string,
   ): Promise<{ received: boolean }> {
+    // ── Timestamp validation (Fixes Issue #118 — Webhook Replay Attack) ──────
+    // Parse the t= field from the Stripe-Signature header, e.g.:
+    //   t=1652378400,v1=abc123...
+    const WEBHOOK_TOLERANCE_SECONDS = 300; // 5 minutes
+
+    const tMatch = signature.match(/t=(\d+)/);
+    if (!tMatch) {
+      throw new ServiceError("INVALID_SIGNATURE", "Missing timestamp in Stripe-Signature header");
+    }
+
+    const webhookTimestamp = parseInt(tMatch[1], 10);
+    const nowSeconds = Math.floor(Date.now() / 1000);
+
+    if (Math.abs(nowSeconds - webhookTimestamp) > WEBHOOK_TOLERANCE_SECONDS) {
+      throw new ServiceError(
+        "WEBHOOK_REPLAY",
+        `Webhook timestamp is outside the allowed ${WEBHOOK_TOLERANCE_SECONDS}s tolerance window`,
+      );
+    }
+
     // Production:
-    // const event = stripe.webhooks.constructEvent(rawBody, signature, STRIPE_WEBHOOK_SECRET);
+    // const event = stripe.webhooks.constructEvent(rawBody, signature, STRIPE_WEBHOOK_SECRET, WEBHOOK_TOLERANCE_SECONDS);
     // switch (event.type) {
     //   case "payment_intent.succeeded": ...
     //   case "payment_intent.payment_failed": ...
     //   case "charge.refunded": ...
     // }
 
-    // Hackathon: log and acknowledge
     console.log("[PaymentService] Stripe webhook received (mock):", signature.slice(0, 20));
     return { received: true };
   },

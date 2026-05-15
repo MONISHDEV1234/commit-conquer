@@ -158,6 +158,8 @@ const STATUS_MAP: Record<string, number> = {
   UPDATE_FAILED:        500,
   DELETE_FAILED:        500,
   INTERNAL_ERROR:       500,
+  WEBHOOK_REPLAY:       400,
+  INVALID_SIGNATURE:    400,
 };
 
 // ─── Health check ─────────────────────────────────────────────────────────────
@@ -170,6 +172,29 @@ app.get("/health", (_req, res) => {
     version: "1.0.0-hackathon",
   });
 });
+
+// ── Stripe webhook — must use raw body parser, BEFORE express.json() ──────────
+// POST /webhooks/stripe
+app.post(
+  "/webhooks/stripe",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const signature = req.headers["stripe-signature"] as string;
+    if (!signature) {
+      res.status(400).json({ error: "Missing Stripe-Signature header" });
+      return;
+    }
+    try {
+      const result = await PaymentService.handleStripeWebhook(
+        req.body.toString(),
+        signature,
+      );
+      res.json(result);
+    } catch (e) {
+      handleErr(e, res);
+    }
+  },
+);
 
 // ══════════════════════════════════════════════════════════════════════════════
 // STORE ROUTES  /api/store/*
