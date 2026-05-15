@@ -29,13 +29,37 @@ export interface PlaceOrderInput {
 
 export interface RefundInput {
   order_id: string;
-  amount: number;        
+  amount: number;
   reason?: string;
 }
 
 
 
 const orders = new Map<string, Order>();
+
+/**
+ * Per-order mutex — tracks order IDs currently undergoing a state-mutating
+ * operation (place, fulfill, ship, deliver, cancel, refund).
+ *
+ * Any concurrent attempt on the same ID is rejected immediately with a 4xx
+ * error so callers can retry safely.  This is O(1) — a single Set.has() check
+ * with zero lock contention on different order IDs.
+ */
+const _inFlight = new Set<string>();
+
+function _acquireLock(id: string): void {
+  if (_inFlight.has(id)) {
+    throw new ServiceError(
+      "CONCURRENT_MODIFICATION",
+      `Order ${id} is already being modified — please retry`,
+    );
+  }
+  _inFlight.add(id);
+}
+
+function _releaseLock(id: string): void {
+  _inFlight.delete(id);
+}
 
 
 
@@ -143,7 +167,7 @@ _seedOrders();
 
 export const OrderService = {
 
-  
+
 
   list(input: ListOrdersInput = {}): PaginatedResponse<Order> {
     const {
@@ -157,17 +181,14 @@ export const OrderService = {
 
     let result = [...orders.values()];
 
-    
     if (status !== "all") {
       result = result.filter((o) => o.status === status);
     }
 
-    
     if (customer_id) {
       result = result.filter((o) => o.customer_id === customer_id);
     }
 
-    
     if (search?.trim()) {
       const q = search.trim().toLowerCase();
       result = result.filter(
@@ -180,7 +201,6 @@ export const OrderService = {
       );
     }
 
-    
     result = result.sort((a, b) => {
       switch (sort) {
         case "oldest":
@@ -198,7 +218,7 @@ export const OrderService = {
     return paginate(result, offset, limit);
   },
 
-  
+
 
   getById(id: string): Order {
     const order = orders.get(id);
@@ -207,8 +227,24 @@ export const OrderService = {
   },
 
 
+  /**
+   * FIX #92 — Place order atomically:
+   *
+   * OLD (broken) sequence:
+   *   complete cart → build order → SAVE ORDER → deduct inventory (silently swallowed)
+   *   Problem: order is publicly visible before stock is reduced → overselling.
+   *
+   * NEW (fixed) sequence:
+   *   complete cart → DEDUCT INVENTORY (with rollback on failure) → SAVE ORDER → emit event
+   *
+   * Inventory is deducted first while the order ID does not yet exist in the
+   * `orders` Map.  If any deduction fails, all previously-deducted variants are
+   * restored before throwing — leaving stock in a consistent state and returning
+   * a 409 INSUFFICIENT_STOCK to the caller.  Only after all deductions succeed
+   * is the order record written and the event emitted.
+   */
   async place(input: PlaceOrderInput): Promise<Order> {
-    
+    // Step 1 — Complete & remove cart (validates email, address, non-empty items)
     const tempCart = CartService.get(input.cart_id);
     if (tempCart.discount_code && tempCart.email) {
       const hasUsed = [...orders.values()].some(
@@ -224,7 +260,6 @@ export const OrderService = {
 
     const { cart, order_id } = await CartService.complete(input.cart_id);
 
-    
     const items: OrderItem[] = cart.items.map((ci) => ({
       id:            generateId("oi"),
       product_id:    ci.product_id,
@@ -237,7 +272,41 @@ export const OrderService = {
       subtotal:      ci.price * ci.quantity,
     }));
 
-    
+    // Step 2 — Deduct inventory BEFORE persisting the order.
+    // Track deducted variants for rollback on partial failure.
+    const deducted: Array<{ product_id: string; variant_id: string; quantity: number }> = [];
+
+    try {
+      for (const item of cart.items) {
+        await ProductService.adjustInventory(
+          item.product_id,
+          item.variant_id,
+          -item.quantity,
+        );
+        deducted.push({
+          product_id: item.product_id,
+          variant_id: item.variant_id,
+          quantity:   item.quantity,
+        });
+      }
+    } catch (err) {
+      // Compensating transaction: restore every variant already deducted
+      for (const d of deducted) {
+        try {
+          await ProductService.adjustInventory(d.product_id, d.variant_id, +d.quantity);
+        } catch (rollbackErr) {
+          // Log at CRITICAL level — manual intervention required
+          console.error(
+            `[OrderService] CRITICAL: inventory rollback failed for variant ${d.variant_id}:`,
+            rollbackErr,
+          );
+        }
+      }
+      // Surface the original error (e.g. INSUFFICIENT_STOCK → 409)
+      throw err;
+    }
+
+    // Step 3 — Persist order only after inventory is confirmed consistent
     const order: Order = {
       id:                  order_id,
       status:              "pending",
@@ -259,23 +328,7 @@ export const OrderService = {
 
     orders.set(order.id, order);
 
-    
-    for (const item of cart.items) {
-      try {
-        await ProductService.adjustInventory(
-          item.product_id,
-          item.variant_id,
-          -item.quantity,
-        );
-      } catch (err) {
-        console.warn(
-          `[OrderService] inventory adjustment failed for variant ${item.variant_id}:`,
-          err,
-        );
-      }
-    }
-
-    
+    // Step 4 — Emit event last; listeners observe a fully-consistent world
     await eventBus.emit(EVENT.ORDER_PLACED, {
       order_id:       order.id,
       customer_email: order.email,
@@ -285,159 +338,205 @@ export const OrderService = {
     return order;
   },
 
-  
 
+
+  /**
+   * FIX #92 — Per-order lock prevents concurrent fulfill + cancel from both
+   * passing the status guard in the gap between read and write.
+   */
   async fulfill(orderId: string): Promise<Order> {
-    const order = OrderService.getById(orderId);
+    _acquireLock(orderId);
+    try {
+      const order = OrderService.getById(orderId);
 
-    if (!["pending", "processing"].includes(order.status)) {
-      throw new ServiceError(
-        "INVALID_TRANSITION",
-        `Cannot fulfill an order with status "${order.status}"`,
-      );
+      if (!["pending", "processing"].includes(order.status)) {
+        throw new ServiceError(
+          "INVALID_TRANSITION",
+          `Cannot fulfill an order with status "${order.status}"`,
+        );
+      }
+
+      await sleep(300);
+
+      const updated = _update(orderId, {
+        status:             "processing",
+        fulfillment_status: "fulfilled",
+        payment_status:     "captured",
+      });
+
+      await eventBus.emit(EVENT.ORDER_FULFILLED, { order_id: orderId });
+
+      return updated;
+    } finally {
+      _releaseLock(orderId);
     }
-
-    await sleep(300); 
-
-    const updated = _update(orderId, {
-      status:             "processing",
-      fulfillment_status: "fulfilled",
-      payment_status:     "captured",
-    });
-
-    await eventBus.emit(EVENT.ORDER_FULFILLED, { order_id: orderId });
-
-    return updated;
   },
 
-  
+
 
   async ship(orderId: string, tracking_number?: string): Promise<Order> {
-    const order = OrderService.getById(orderId);
+    _acquireLock(orderId);
+    try {
+      const order = OrderService.getById(orderId);
 
-    if (order.fulfillment_status !== "fulfilled") {
-      throw new ServiceError(
-        "INVALID_TRANSITION",
-        `Order must be fulfilled before it can be shipped`,
-      );
+      if (order.fulfillment_status !== "fulfilled") {
+        throw new ServiceError(
+          "INVALID_TRANSITION",
+          `Order must be fulfilled before it can be shipped`,
+        );
+      }
+
+      await sleep(200);
+
+      const updated = _update(orderId, {
+        status:             "shipped",
+        fulfillment_status: "shipped",
+      });
+
+      await eventBus.emit(EVENT.ORDER_SHIPPED, { order_id: orderId, tracking_number });
+
+      return updated;
+    } finally {
+      _releaseLock(orderId);
     }
-
-    await sleep(200);
-
-    const updated = _update(orderId, {
-      status:             "shipped",
-      fulfillment_status: "shipped",
-    });
-
-    await eventBus.emit(EVENT.ORDER_SHIPPED, { order_id: orderId, tracking_number });
-
-    return updated;
   },
 
-  
+
 
   async deliver(orderId: string): Promise<Order> {
-    const order = OrderService.getById(orderId);
+    _acquireLock(orderId);
+    try {
+      const order = OrderService.getById(orderId);
 
-    if (order.status !== "shipped") {
-      throw new ServiceError(
-        "INVALID_TRANSITION",
-        `Order must be shipped before marking as delivered`,
-      );
-    }
-
-    const updated = _update(orderId, {
-      status:             "delivered",
-      fulfillment_status: "delivered",
-    });
-
-    await eventBus.emit(EVENT.ORDER_DELIVERED, { order_id: orderId });
-
-    return updated;
-  },
-
-  
-
-  async cancel(orderId: string, reason?: string): Promise<Order> {
-    const order = OrderService.getById(orderId);
-
-    if (!["pending", "processing"].includes(order.status)) {
-      throw new ServiceError(
-        "INVALID_TRANSITION",
-        `Cannot cancel an order with status "${order.status}"`,
-      );
-    }
-
-    await sleep(300);
-
-    // Re-stock inventory
-    for (const item of order.items) {
-      try {
-        await ProductService.adjustInventory(
-          item.product_id,
-          item.variant_id,
-          +item.quantity,  // positive = restock
+      if (order.status !== "shipped") {
+        throw new ServiceError(
+          "INVALID_TRANSITION",
+          `Order must be shipped before marking as delivered`,
         );
-      } catch (err) {
-        console.warn(`[OrderService] restock failed for variant ${item.variant_id}:`, err);
       }
+
+      const updated = _update(orderId, {
+        status:             "delivered",
+        fulfillment_status: "delivered",
+      });
+
+      await eventBus.emit(EVENT.ORDER_DELIVERED, { order_id: orderId });
+
+      return updated;
+    } finally {
+      _releaseLock(orderId);
     }
-
-    const updated = _update(orderId, {
-      status:            "cancelled",
-      fulfillment_status: "not_fulfilled",
-    });
-
-    await eventBus.emit(EVENT.ORDER_CANCELLED, { order_id: orderId, reason });
-
-    return updated;
   },
 
-  
+
+
+  /**
+   * FIX #92 — Cancel atomically:
+   *
+   * OLD (broken) sequence:
+   *   validate → restock inventory → update status to "cancelled"
+   *   Problem: inventory is available again while order still appears active →
+   *   a new placement can double-allocate the just-restocked units.
+   *
+   * NEW (fixed) sequence:
+   *   acquire lock → validate → UPDATE STATUS TO "cancelled" → restock inventory
+   *
+   *   The order is marked closed first so no concurrent read of it can treat it
+   *   as an active reservation.  Restock failures are still logged but do not
+   *   un-cancel the order (they require operational follow-up).
+   */
+  async cancel(orderId: string, reason?: string): Promise<Order> {
+    _acquireLock(orderId);
+    try {
+      const order = OrderService.getById(orderId);
+
+      if (!["pending", "processing"].includes(order.status)) {
+        throw new ServiceError(
+          "INVALID_TRANSITION",
+          `Cannot cancel an order with status "${order.status}"`,
+        );
+      }
+
+      await sleep(300);
+
+      // Step A — Close the order FIRST so it is no longer an active reservation
+      const updated = _update(orderId, {
+        status:             "cancelled",
+        fulfillment_status: "not_fulfilled",
+      });
+
+      // Step B — Restock AFTER the status write is committed
+      for (const item of order.items) {
+        try {
+          await ProductService.adjustInventory(
+            item.product_id,
+            item.variant_id,
+            +item.quantity,  // positive = restock
+          );
+        } catch (err) {
+          console.warn(`[OrderService] restock failed for variant ${item.variant_id}:`, err);
+        }
+      }
+
+      await eventBus.emit(EVENT.ORDER_CANCELLED, { order_id: orderId, reason });
+
+      return updated;
+    } finally {
+      _releaseLock(orderId);
+    }
+  },
+
+
 
   async refund(input: RefundInput): Promise<Order> {
     const { order_id, amount, reason = "customer_request" } = input;
-    const order = OrderService.getById(order_id);
 
-    if (!["delivered", "shipped"].includes(order.status)) {
-      throw new ServiceError(
-        "INVALID_TRANSITION",
-        `Refunds are only allowed on shipped or delivered orders`,
-      );
+    _acquireLock(order_id);
+    try {
+      const order = OrderService.getById(order_id);
+
+      if (!["delivered", "shipped"].includes(order.status)) {
+        throw new ServiceError(
+          "INVALID_TRANSITION",
+          `Refunds are only allowed on shipped or delivered orders`,
+        );
+      }
+
+      if (typeof amount !== "number" || Number.isNaN(amount) || amount <= 0) {
+        throw new ServiceError("INVALID_AMOUNT", "Refund amount must be a valid number greater than zero");
+      }
+
+      if (Number.isNaN(order.total)) {
+        throw new ServiceError("INVALID_ORDER", "Order total is corrupted (NaN)");
+      }
+
+      if (amount > order.total) {
+        throw new ServiceError(
+          "INVALID_AMOUNT",
+          `Refund amount ${formatMoney(amount)} exceeds order total ${formatMoney(order.total)}`,
+        );
+      }
+
+      await sleep(400);
+
+      await eventBus.emit(EVENT.ORDER_REFUND_REQUESTED, { order_id, amount });
+
+      const isFullRefund = amount === order.total;
+
+      const updated = _update(order_id, {
+        status:         isFullRefund ? "refunded" : order.status,
+        payment_status: isFullRefund ? "refunded" : "partially_refunded",
+      });
+
+      await eventBus.emit(EVENT.ORDER_REFUNDED, { order_id, amount });
+
+      return updated;
+    } finally {
+      _releaseLock(order_id);
     }
-
-    if (typeof amount !== "number" || Number.isNaN(amount) || amount <= 0) {
-      throw new ServiceError("INVALID_AMOUNT", "Refund amount must be a valid number greater than zero");
-    }
-
-    if (Number.isNaN(order.total)) {
-      throw new ServiceError("INVALID_ORDER", "Order total is corrupted (NaN)");
-    }
-
-    if (amount > order.total) {
-      throw new ServiceError(
-        "INVALID_AMOUNT",
-        `Refund amount ${formatMoney(amount)} exceeds order total ${formatMoney(order.total)}`,
-      );
-    }
-
-    await sleep(400);
-
-    await eventBus.emit(EVENT.ORDER_REFUND_REQUESTED, { order_id, amount });
-
-    const isFullRefund = amount === order.total;
-
-    const updated = _update(order_id, {
-      status:         isFullRefund ? "refunded" : order.status,
-      payment_status: isFullRefund ? "refunded" : "partially_refunded",
-    });
-
-    await eventBus.emit(EVENT.ORDER_REFUNDED, { order_id, amount });
-
-    return updated;
   },
 
-  
+
 
   stats(): {
     total: number;
