@@ -321,9 +321,27 @@ export default function CheckoutForm() {
   const validatePayment = () => {
     const errs: Record<string, string> = {};
     const raw = payment.card_number.replace(/\s/g, "");
-    if (raw.length < 16) errs.card_number = "Enter a valid 16-digit card number";
-    if (!payment.expiry.match(/^\d{2}\/\d{2}$/)) errs.expiry = "MM/YY format";
-    if (payment.cvc.length < 3) errs.cvc = "3-digit CVC";
+    if (raw.length < 15) errs.card_number = "Enter a valid card number";
+
+    // Expiry must be MM/YY and represent a month/year not in the past
+    if (!payment.expiry.match(/^\d{2}\/\d{2}$/)) {
+      errs.expiry = "MM/YY format";
+    } else {
+      const [mm, yy] = payment.expiry.split("/").map((s) => parseInt(s, 10));
+      if (!(mm >= 1 && mm <= 12)) errs.expiry = "Month must be 01-12";
+      else {
+        const now = new Date();
+        const currentYear = now.getFullYear() % 100; // two-digit
+        const currentMonth = now.getMonth() + 1;
+        if (yy < currentYear || (yy === currentYear && mm < currentMonth)) {
+          errs.expiry = "Card has expired";
+        }
+      }
+    }
+
+    // CVC should be numeric and 3 or 4 digits depending on card; accept 3-4 digits
+    if (!/^[0-9]{3,4}$/.test(payment.cvc)) errs.cvc = "Enter a 3 or 4 digit CVC";
+
     if (!payment.name_on_card.trim()) errs.name_on_card = "Required";
     setErrors(errs);
     return Object.keys(errs).length === 0;
@@ -393,7 +411,12 @@ export default function CheckoutForm() {
 
   const pay = (field: keyof PaymentForm, formatter?: (v: string) => string) =>
     (e: React.ChangeEvent<HTMLInputElement>) => {
-      const val = formatter ? formatter(e.target.value) : e.target.value;
+      let val = formatter ? formatter(e.target.value) : e.target.value;
+      // sanitize cvc to digits only and cap at 4
+      if (field === "cvc") {
+        val = val.replace(/\D/g, "").slice(0, 4);
+      }
+      // ensure expiry formatter already handles numeric restriction
       setPayment((prev) => ({ ...prev, [field]: val }));
       setErrors((prev) => { const n = { ...prev }; delete n[field]; return n; });
     };
@@ -650,11 +673,13 @@ export default function CheckoutForm() {
                     <label>
                       <span className="label-text required">CVC</span>
                       <input
+                        type="password"
                         value={payment.cvc}
                         onChange={pay("cvc")}
-                        placeholder="123"
+                        placeholder="•••"
                         maxLength={4}
                         inputMode="numeric"
+                        pattern="[0-9]*"
                         className={errors.cvc ? "error" : ""}
                       />
                       {errors.cvc && <span className="field-error">{errors.cvc}</span>}
