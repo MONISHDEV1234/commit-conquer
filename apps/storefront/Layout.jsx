@@ -52,7 +52,7 @@ function cartReducer(state, action) {
   }
 }
 
-function CartProvider({ children }) {
+export function CartProvider({ children }) {
   const [state, dispatch] = useReducer(cartReducer, { items: [], isOpen: false });
   const derived = {
     ...state,
@@ -140,15 +140,13 @@ function Footer() {
 
 export default function Layout() {
   return (
-    <CartProvider>
-      <div style={s.root}>
-        <Header />
-        <main style={s.main}>
-          <Outlet />   {/* React Router renders child page here */}
-        </main>
-        <Footer />
-      </div>
-    </CartProvider>
+    <div style={s.root}>
+      <Header />
+      <main style={s.main}>
+        <Outlet />   {/* React Router renders child page here */}
+      </main>
+      <Footer />
+    </div>
   );
 }
 

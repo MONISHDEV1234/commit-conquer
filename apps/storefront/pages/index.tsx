@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { Link, useNavigate } from "react-router-dom";
 import { useCartState, useCartDispatch } from "../Layout";
 import CartDrawer from "../CartDrawer";
 
@@ -432,6 +433,7 @@ function ProductCard({
   listView: boolean;
   onAddToCart: (p: Product) => void;
 }) {
+  const navigate = useNavigate();
   const [added, setAdded] = useState(false);
   const [localInv, setLocalInv] = useState(product.inventory);
 
@@ -450,10 +452,7 @@ function ProductCard({
   return (
     <div
       className={`product-card${listView ? " list-card" : ""}`}
-      onClick={() => {
-        
-        window.location.href = `/products/${product.handle}`;
-      }}
+      onClick={() => navigate(`/products/${product.handle}`)}
     >
       <div className="card-img-wrap">
         <img src={product.thumbnail} alt={product.title} className="card-img" loading="lazy" />
@@ -548,8 +547,8 @@ function SkeletonCard() {
 
 export default function StorefrontPage() {
   const { itemCount } = useCartState();
-  
-  const { addItem } = useCartDispatch() as any;
+  const dispatch = useCartDispatch();
+  const navigate = useNavigate();
 
   const [cartOpen, setCartOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -594,16 +593,19 @@ export default function StorefrontPage() {
   const total = data?.pages[0]?.total ?? 0;
 
   const handleAddToCart = useCallback((product: Product) => {
-    addItem({
-      id: product.id,
-      title: product.title,
-      price: product.price,
-      thumbnail: product.thumbnail,
-      quantity: 1,
+    dispatch({
+      type: "ADD_ITEM",
+      payload: {
+        id: product.id,
+        title: product.title,
+        price: product.price,
+        thumbnail: product.thumbnail,
+        quantity: 1,
+      },
     });
     setToast(`${product.title} added to cart`);
     setTimeout(() => setToast(null), 2200);
-  }, [addItem]);
+  }, [dispatch]);
 
   const toggleTag = (tag: string) => {
     setActiveTags((prev) => prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]);
@@ -628,14 +630,14 @@ export default function StorefrontPage() {
 
       
       <nav className="nav">
-        <a href="/" className="nav-logo">
+        <Link to="/" className="nav-logo">
           <span className="nav-logo-dot" />
           commit&amp;conquer
-        </a>
+        </Link>
         <div className="nav-links">
-          <a href="/" className="nav-link active">Shop</a>
-          <a href="/collections" className="nav-link">Collections</a>
-          <a href="/about" className="nav-link">About</a>
+          <Link to="/" className="nav-link active">Shop</Link>
+          <Link to="/collections" className="nav-link">Collections</Link>
+          <Link to="/about" className="nav-link">About</Link>
         </div>
         <div className="nav-actions">
           <button className="cart-btn" onClick={() => setCartOpen(true)}>
@@ -665,7 +667,7 @@ export default function StorefrontPage() {
               <path d="M5 12h14M12 5l7 7-7 7"/>
             </svg>
           </a>
-          <a href="/about" className="btn-cta-ghost">Our Story</a>
+          <Link to="/about" className="btn-cta-ghost">Our Story</Link>
         </div>
       </section>
 
