@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as Dialog from "@radix-ui/react-dialog";
 import * as Select from "@radix-ui/react-select";
@@ -374,6 +374,8 @@ const STATUS_CONFIG = {
 function OrderDrawer({ order, onClose }) {
   const queryClient = useQueryClient();
   const [refundAmount, setRefundAmount] = useState("");
+  // ✅ Ref always holds the latest validated numeric value — avoids stale closure in execConfirm
+  const refundAmountRef = useRef(0);
   const [confirm, setConfirm] = useState(null); // { type, label, btnClass, desc }
 
   const fulfillMutation = useMutation({
@@ -391,25 +393,29 @@ function OrderDrawer({ order, onClose }) {
     },
   });
   const refundMutation = useMutation({
-    mutationFn: () =>
-      apiRefund({ id: order.id, amount: parseFloat(refundAmount) }),
+    mutationFn: (amount) =>
+      apiRefund({ id: order.id, amount: amount ?? refundAmountRef.current }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
       onClose();
     },
   });
 
-  // ✅ THE FIX: cap refund input — cannot exceed order total
+  // ✅ FIX: synchronously validate against raw input value before committing to state
   const handleRefundChange = (e) => {
     const raw = e.target.value;
     if (raw === "" || raw === ".") {
       setRefundAmount(raw);
+      refundAmountRef.current = 0;
       return;
     }
     const num = parseFloat(raw);
     if (isNaN(num) || num < 0) return;
-    // Hard cap at order total
-    setRefundAmount(String(Math.min(num, order.total)));
+    // Hard-cap: never allow value beyond order total, even mid-keystroke
+    const capped = Math.min(num, order.total);
+    const cappedStr = String(capped);
+    refundAmountRef.current = capped;
+    setRefundAmount(cappedStr);
   };
 
   const parsedRefund = parseFloat(refundAmount) || 0;
@@ -427,7 +433,15 @@ function OrderDrawer({ order, onClose }) {
     if (!confirm) return;
     if (confirm.type === "fulfill") fulfillMutation.mutate();
     else if (confirm.type === "cancel") cancelMutation.mutate();
-    else if (confirm.type === "refund") refundMutation.mutate();
+    else if (confirm.type === "refund") {
+      // ✅ Use ref value — guaranteed to be the latest validated amount, not stale closure
+      const safeAmount = refundAmountRef.current;
+      if (safeAmount <= 0 || safeAmount > order.total) {
+        setConfirm(null);
+        return;
+      }
+      refundMutation.mutate(safeAmount);
+    }
     setConfirm(null);
   };
 
