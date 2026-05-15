@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
+import { Link, useNavigate } from "react-router-dom";
 import { useCartState, useCartDispatch } from "../Layout";
 import CartDrawer from "../CartDrawer";
 
@@ -408,6 +409,7 @@ function ProductCard({
   listView: boolean;
   onAddToCart: (p: Product) => void;
 }) {
+  const navigate = useNavigate();
   const [added, setAdded] = useState(false);
   const [localInv, setLocalInv] = useState(product.inventory);
 
@@ -570,6 +572,15 @@ export default function StorefrontPage() {
   const total = data?.pages[0]?.total ?? 0;
 
   const handleAddToCart = useCallback((product: Product) => {
+    dispatch({
+      type: "ADD_ITEM",
+      payload: {
+        id: product.id,
+        title: product.title,
+        price: product.price,
+        thumbnail: product.thumbnail,
+        quantity: 1,
+      },
     dispatch.addItem({
       id: product.id,
       variantId: product.variantId,
@@ -605,14 +616,14 @@ export default function StorefrontPage() {
 
 
       <nav className="nav">
-        <a href="/" className="nav-logo">
+        <Link to="/" className="nav-logo">
           <span className="nav-logo-dot" />
           commit&amp;conquer
-        </a>
+        </Link>
         <div className="nav-links">
-          <a href="/" className="nav-link active">Shop</a>
-          <a href="/collections" className="nav-link">Collections</a>
-          <a href="/about" className="nav-link">About</a>
+          <Link to="/" className="nav-link active">Shop</Link>
+          <Link to="/collections" className="nav-link">Collections</Link>
+          <Link to="/about" className="nav-link">About</Link>
         </div>
         <div className="nav-actions">
           <button className="cart-btn" onClick={() => setCartOpen(true)}>
@@ -642,7 +653,7 @@ export default function StorefrontPage() {
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>
           </a>
-          <a href="/about" className="btn-cta-ghost">Our Story</a>
+          <Link to="/about" className="btn-cta-ghost">Our Story</Link>
         </div>
       </section>
 
