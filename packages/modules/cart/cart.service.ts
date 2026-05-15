@@ -91,7 +91,9 @@ export const CartService = {
     }
 
     
-    const existingLine = cart.items.find((i) => i.variant_id === variantId);
+    const existingLine = cart.items.find(
+      (i) => i.product_id === productId && i.variant_id === variantId,
+    );
     const currentQtyInCart = existingLine?.quantity ?? 0;
     const requested = currentQtyInCart + quantity;
 
