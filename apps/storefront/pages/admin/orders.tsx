@@ -1,4 +1,4 @@
-// apps/storefront/pages/admin/orders.tsx
+
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -19,7 +19,7 @@ async function fetchOrders(search = "", status = "all") {
     const res = await fetch(`${ADMIN}/orders?${params}`, { headers: HEADERS });
     if (res.ok) { const d = await res.json(); return d.orders ?? d.data ?? []; }
   } catch {}
-  // Demo data
+  
   const names = [["Ethan","Cole"],["Maya","Patel"],["Lucas","Kim"],["Zoe","Turner"],["Aiden","Brooks"],["Sara","Nolan"]];
   const statuses = ["pending","paid","fulfilled","cancelled","fulfilled","paid"];
   const items = [
@@ -60,9 +60,9 @@ export default function AdminOrders() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
-  const action = async (orderId: string, type: "fulfill" | "cancel" | "refund") => {
+  const action = async (orderId: string, type: "fulfill" | "cancel" | "refund", amount?: number) => {
     try {
-      const body = type === "refund" ? JSON.stringify({ amount: 0, reason: "Customer request" }) : undefined;
+      const body = type === "refund" ? JSON.stringify({ amount, reason: "Customer request" }) : undefined;
       await fetch(`${ADMIN}/orders/${orderId}/${type}`, { method: "POST", headers: HEADERS, body });
       qc.invalidateQueries({ queryKey: ["admin-orders"] });
       showToast(`Order ${type}ed`);
@@ -138,7 +138,7 @@ export default function AdminOrders() {
                         <button onClick={() => action(order.id, "cancel")} style={s.cancelBtn}>Cancel</button>
                       )}
                       {order.status === "fulfilled" && (
-                        <button onClick={() => action(order.id, "refund")} style={s.cancelBtn}>Refund</button>
+                        <button onClick={() => action(order.id, "refund", order.total)} style={s.cancelBtn}>Refund</button>
                       )}
                     </div>
                   </td>

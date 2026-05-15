@@ -9,7 +9,7 @@ import * as Checkbox from "@radix-ui/react-checkbox";
 import * as Select from "@radix-ui/react-select";
 
 
-// ─── Local Cart State (self-contained, no storefront dependency) ─────────────
+
 function cartReducer(state, action) {
   switch (action.type) {
     case "ADD": {
@@ -70,61 +70,68 @@ function useLocalCart() {
   };
 }
 
-// ─── Mock Medusa SDK (replace with your actual client) ───────────────────────
+
+const ADMIN_API = "http://localhost:4000/api/admin";
+
 const fetchProducts = async ({ pageParam = 0, filters }) => {
-  await new Promise((r) => setTimeout(r, 600));
-  const limit = 12;
-  const total = 47;
-  const allProducts = Array.from({ length: total }, (_, i) => ({
-    id: `prod_${String(i + 1).padStart(3, "0")}`,
-    thumbnail: `https://picsum.photos/seed/${i + 1}/48/48`,
-    title: [
-      "Obsidian Crew Neck",
-      "Slate Cargo Pant",
-      "Onyx Hoodie",
-      "Granite Bomber",
-      "Ash Trench Coat",
-      "Carbon Jogger",
-      "Basalt Windbreaker",
-      "Charcoal Denim",
-      "Iron Fleece",
-      "Flint Overshirt",
-      "Coal Polo",
-      "Cinder Vest",
-    ][i % 12],
-    status: ["published", "draft", "published", "published", "draft"][i % 5],
-    price: 29 + ((i * 17) % 200),
-    priceLabel: `$${(29 + ((i * 17) % 200)).toFixed(2)}`,
-    inventory: 200 - ((i * 13) % 200),
-    category: ["Tops", "Bottoms", "Outerwear", "Accessories"][i % 4],
-    updatedAt: new Date(Date.now() - i * 86400000 * 3).toLocaleDateString(),
-  }));
-
-  let filtered = allProducts;
-  if (filters.search)
-    filtered = filtered.filter((p) =>
-      p.title.toLowerCase().includes(filters.search.toLowerCase()),
-    );
-  if (filters.status && filters.status !== "all")
-    filtered = filtered.filter((p) => p.status === filters.status);
-  if (filters.category && filters.category !== "all")
-    filtered = filtered.filter((p) => p.category === filters.category);
-
-  const start = pageParam * limit;
-  const items = filtered.slice(start, start + limit);
+  const params = new URLSearchParams({
+    limit: "12",
+    offset: (pageParam * 12).toString(),
+    search: filters.search || "",
+    status: filters.status || "all",
+    category: filters.category || "all",
+  });
+  
+  const res = await fetch(`${ADMIN_API}/products?${params}`, {
+    headers: { "x-admin-secret": "admin_dev_secret" }
+  });
+  
+  if (!res.ok) {
+    throw new Error("Failed to fetch products");
+  }
+  
+  const data = await res.json();
+  const rawProducts = data.products ?? data.data ?? [];
+  
+  const products = rawProducts.map(p => {
+    const minPrice = p.variants?.length ? Math.min(...p.variants.map(v => v.price)) : 0;
+    const totalInv = p.variants?.reduce((sum, v) => sum + (v.inventory_quantity || 0), 0) || 0;
+    return {
+      ...p,
+      priceLabel: `$${(minPrice / 100).toFixed(2)}`,
+      price: minPrice / 100,
+      inventory: totalInv,
+      updatedAt: new Date(p.updated_at || p.created_at || Date.now()).toLocaleDateString(),
+    };
+  });
+  
+  const total = data.total ?? products.length;
+  const start = pageParam * 12;
+  
   return {
-    products: items,
-    nextPage: start + limit < filtered.length ? pageParam + 1 : undefined,
-    total: filtered.length,
+    products,
+    nextPage: start + 12 < total ? pageParam + 1 : undefined,
+    total,
   };
 };
 
 const deleteProducts = async (ids) => {
-  await new Promise((r) => setTimeout(r, 800));
-  return { deleted: ids };
+  const res = await fetch(`${ADMIN_API}/products`, {
+    method: "DELETE",
+    headers: { 
+      "Content-Type": "application/json",
+      "x-admin-secret": "admin_dev_secret" 
+    },
+    body: JSON.stringify({ ids }),
+  });
+  
+  if (!res.ok) {
+    throw new Error("Failed to delete products");
+  }
+  return res.json();
 };
 
-// ─── Styles ──────────────────────────────────────────────────────────────────
+
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;500;600;700;800&display=swap');
 
@@ -606,7 +613,7 @@ const css = `
   .btn-clear:hover { background: var(--red-dim); color: var(--red); border-color: rgba(255,92,92,0.25); }
 `;
 
-// ─── Inline CartDrawer (slide-over panel) ────────────────────────────────────
+
 function CartPanel({ open, onClose, setInventoryMap, items, itemCount, total, removeItem, updateQty, clearCart }) {
 
   if (!open) return null;
@@ -615,7 +622,7 @@ function CartPanel({ open, onClose, setInventoryMap, items, itemCount, total, re
     <>
       <div className="cart-overlay" onClick={onClose} />
       <div className="cart-panel" role="dialog" aria-label="Cart">
-        {/* Header */}
+        
         <div className="cart-header">
           <h2>
             Cart
@@ -639,7 +646,7 @@ function CartPanel({ open, onClose, setInventoryMap, items, itemCount, total, re
           </button>
         </div>
 
-        {/* Items */}
+        
         <div className="cart-items">
           {items.length === 0 ? (
             <div className="cart-empty">
@@ -721,7 +728,7 @@ function CartPanel({ open, onClose, setInventoryMap, items, itemCount, total, re
           )}
         </div>
 
-        {/* Footer */}
+        
         {items.length > 0 && (
           <div className="cart-footer">
             <div className="cart-total-row">
@@ -751,31 +758,31 @@ function CartPanel({ open, onClose, setInventoryMap, items, itemCount, total, re
   );
 }
 
-// ─── ProductsPage ─────────────────────────────────────────────────────────────
+
 export default function ProductsPage() {
   const queryClient = useQueryClient();
 
-  // Filter state
+  
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
 
-  // Selection state
+  
   const [selected, setSelected] = useState(new Set());
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [inventoryMap, setInventoryMap] = useState({});
-  // Cart panel state
+  
   const [cartOpen, setCartOpen] = useState(false);
   const { items: cartItems, itemCount, total: cartTotal, addItem, removeItem, updateQty, clearCart } = useLocalCart();
 
-  // Debounce search
+  
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 350);
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset selection on filter change
+  
   useEffect(() => {
     setSelected(new Set());
   }, [debouncedSearch, statusFilter, categoryFilter]);
@@ -800,7 +807,7 @@ export default function ProductsPage() {
     initialPageParam: 0,
   });
 
-  // Infinite scroll sentinel
+  
   const sentinelRef = useRef(null);
   useEffect(() => {
     const el = sentinelRef.current;
@@ -816,13 +823,13 @@ export default function ProductsPage() {
     return () => obs.disconnect();
   }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-  // Flatten pages
+  
   const allProducts = data?.pages.flatMap((p) => p.products) ?? [];
   const total = data?.pages[0]?.total ?? 0;
   const published = allProducts.filter((p) => p.status === "published").length;
   const drafts = allProducts.filter((p) => p.status === "draft").length;
 
-  // Selection helpers
+  
   const allSelected =
     allProducts.length > 0 && allProducts.every((p) => selected.has(p.id));
   const someSelected = selected.size > 0 && !allSelected;
@@ -837,7 +844,7 @@ export default function ProductsPage() {
     setSelected(next);
   };
 
-  // Delete mutation
+  
   const deleteMutation = useMutation({
     mutationFn: () => deleteProducts([...selected]),
     onSuccess: () => {
@@ -913,7 +920,7 @@ export default function ProductsPage() {
             />
           </div>
 
-          {/* Status filter */}
+          
           <Select.Root value={statusFilter} onValueChange={setStatusFilter}>
             <Select.Trigger className="select-trigger">
               <Select.Value />
@@ -1000,7 +1007,7 @@ export default function ProductsPage() {
           )}
         </div>
 
-        {/* Bulk action bar */}
+        
         {selected.size > 0 && (
           <div className="bulk-bar">
             <span>{selected.size} selected</span>

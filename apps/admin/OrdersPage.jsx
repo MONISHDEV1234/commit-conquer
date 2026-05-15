@@ -4,7 +4,7 @@ import * as Dialog from "@radix-ui/react-dialog";
 import * as Select from "@radix-ui/react-select";
 import DataTable from "./DataTable";
 
-// ─── Mock Data ────────────────────────────────────────────────────────────────
+
 const STATUSES = [
   "pending",
   "processing",
@@ -91,7 +91,7 @@ const apiRefund = async ({ id, amount }) => {
   return { id, amount };
 };
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
+
 const css = `
   @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;500;600;700;800&display=swap');
 
@@ -359,7 +359,7 @@ const css = `
   @keyframes spin { to { transform: rotate(360deg); } }
 `;
 
-// ─── Status config ────────────────────────────────────────────────────────────
+
 const STATUS_CONFIG = {
   all: { label: "All", color: "var(--text)" },
   pending: { label: "Pending", color: "var(--amber)" },
@@ -370,7 +370,7 @@ const STATUS_CONFIG = {
   refunded: { label: "Refunded", color: "var(--text-muted)" },
 };
 
-// ─── Order Detail Drawer ──────────────────────────────────────────────────────
+
 function OrderDrawer({ order, onClose }) {
   const queryClient = useQueryClient();
   const [refundAmount, setRefundAmount] = useState("");
@@ -401,7 +401,7 @@ function OrderDrawer({ order, onClose }) {
     },
   });
 
-  // ✅ FIX: synchronously validate against raw input value before committing to state
+  
   const handleRefundChange = (e) => {
     const raw = e.target.value;
     if (raw === "" || raw === ".") {
@@ -411,11 +411,8 @@ function OrderDrawer({ order, onClose }) {
     }
     const num = parseFloat(raw);
     if (isNaN(num) || num < 0) return;
-    // Hard-cap: never allow value beyond order total, even mid-keystroke
-    const capped = Math.min(num, order.total);
-    const cappedStr = String(capped);
-    refundAmountRef.current = capped;
-    setRefundAmount(cappedStr);
+    
+    setRefundAmount(String(Math.min(num, order.total)));
   };
 
   const parsedRefund = parseFloat(refundAmount) || 0;
@@ -449,7 +446,7 @@ function OrderDrawer({ order, onClose }) {
     <>
       <div className="drawer-overlay" onClick={onClose} />
       <div className="drawer">
-        {/* Drawer header */}
+        
         <div className="drawer-header">
           <div>
             <div className="drawer-title">{order.id}</div>
@@ -698,7 +695,7 @@ function OrderDrawer({ order, onClose }) {
   );
 }
 
-// ─── OrdersPage ───────────────────────────────────────────────────────────────
+
 export default function OrdersPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -744,7 +741,7 @@ export default function OrdersPage() {
     <>
       <style>{css}</style>
       <div className="page">
-        {/* Header */}
+        
         <div className="header">
           <div className="header-left">
             <h1>Orders</h1>
@@ -786,7 +783,7 @@ export default function OrdersPage() {
           ))}
         </div>
 
-        {/* Toolbar */}
+        
         <div className="toolbar">
           <div className="search-wrap">
             <span className="search-icon">
@@ -858,7 +855,7 @@ export default function OrdersPage() {
           </span>
         </div>
 
-        {/* Table */}
+        
         <div className="table-wrap">
           <DataTable
             storageKey="orders_sort"
@@ -897,7 +894,7 @@ export default function OrdersPage() {
           )}
         </div>
 
-        {/* Order drawer */}
+        
         {selectedOrder && (
           <OrderDrawer
             order={selectedOrder}

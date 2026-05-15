@@ -1,6 +1,4 @@
-// apps/storefront/pages/product-detail.tsx
-// Route: /products/:handle
-// Fetches product by handle from backend, shows images, variants, add-to-cart
+
 
 import { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
@@ -11,7 +9,7 @@ import CartDrawer from "../CartDrawer";
 const API = "/api/v1/store";
 
 async function fetchProduct(handle: string) {
-  // Try by handle first, fall back to mock
+  
   try {
     const res = await fetch(`${API}/products/handle/${handle}`);
     if (res.ok) {
@@ -19,7 +17,7 @@ async function fetchProduct(handle: string) {
       return data.product;
     }
   } catch {}
-  // Mock product for demo if backend not running
+  
   return {
     id: `prod_demo`,
     handle,
@@ -65,19 +63,16 @@ export default function ProductDetail() {
   const addToCart = () => {
     if (!product) return;
     const variant = product.variants?.find((v: any) => v.id === selectedVariant) ?? product.variants?.[0];
-    dispatch?.({
-      type: "ADD_ITEM",
-      payload: {
-        id:        product.id,
-        variantId: variant?.id ?? "default",
-        title:     product.title,
-        price:     (product.price ?? 0) / 100,
-        thumbnail: product.thumbnail,
-        size:      variant?.title,
-        quantity:  qty,
-      },
+    dispatch.addItem({
+      id:        product.id,
+      variantId: variant?.id ?? "default",
+      title:     product.title,
+      price:     product.price ?? 0, // Send as cents
+      thumbnail: product.thumbnail,
+      size:      variant?.title,
+      quantity:  qty,
     });
-    dispatch?.({ type: "TOGGLE_CART", payload: true });
+    dispatch.toggleCart(true);
     setToast("Added to cart!");
     setTimeout(() => setToast(null), 2500);
   };
@@ -98,7 +93,7 @@ export default function ProductDetail() {
     <div style={s.page}>
       <style>{css}</style>
 
-      {/* Breadcrumb */}
+      
       <nav style={s.breadcrumb}>
         <Link to="/" style={s.bcLink}>Shop</Link>
         <span style={{ color: "#555" }}>›</span>
@@ -129,7 +124,7 @@ export default function ProductDetail() {
           )}
         </div>
 
-        {/* ── Info ── */}
+        
         <div style={s.info}>
           <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
             {product.tags?.map((t: string) => (
@@ -149,7 +144,7 @@ export default function ProductDetail() {
 
           <p style={s.desc}>{product.description}</p>
 
-          {/* Variants / sizes */}
+          
           {product.variants?.length > 0 && (
             <div style={{ marginBottom: 24 }}>
               <p style={s.label}>Size</p>
@@ -176,7 +171,7 @@ export default function ProductDetail() {
             </div>
           )}
 
-          {/* Quantity */}
+          
           <div style={{ marginBottom: 24 }}>
             <p style={s.label}>Quantity</p>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
@@ -186,7 +181,7 @@ export default function ProductDetail() {
             </div>
           </div>
 
-          {/* CTA */}
+          
           <button
             onClick={addToCart}
             disabled={!inStock}

@@ -1,5 +1,5 @@
 // apps/storefront/pages/admin/products.tsx
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 const ADMIN   = "/api/v1/admin";
@@ -11,7 +11,7 @@ async function fetchProducts(search = "", status = "all") {
     const res = await fetch(`${ADMIN}/products?${params}`, { headers: HEADERS });
     if (res.ok) { const d = await res.json(); return d.products ?? d.data ?? []; }
   } catch {}
-  // Demo data
+  
   const titles = ["Obsidian Crew Neck","Slate Cargo Pant","Onyx Hoodie","Granite Bomber","Ash Trench Coat","Carbon Jogger","Basalt Windbreaker","Charcoal Denim","Iron Fleece","Flint Overshirt","Coal Polo","Cinder Vest"];
   return Array.from({ length: 16 }, (_, i) => ({
     id: `prod_${String(i+1).padStart(3,"0")}`,
@@ -42,11 +42,23 @@ export default function AdminProducts() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 2500); };
 
+  const filteredProducts = useMemo(() => {
+    return products.filter((p: any) => {
+      const matchSearch = !search || p.title.toLowerCase().includes(search.toLowerCase());
+      const matchStatus = status === "all" || p.status === status;
+      return matchSearch && matchStatus;
+    });
+  }, [products, search, status]);
+
+  useEffect(() => {
+    setSelected([]);
+  }, [search, status]);
+
   const toggleSelect = (id: string) =>
     setSelected((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id]);
 
   const selectAll = () =>
-    setSelected(selected.length === products.length ? [] : products.map((p: any) => p.id));
+    setSelected(selected.length === filteredProducts.length && filteredProducts.length > 0 ? [] : filteredProducts.map((p: any) => p.id));
 
   const createProduct = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,7 +105,7 @@ export default function AdminProducts() {
         <button onClick={() => setShowAdd(true)} style={s.addBtn}>+ New Product</button>
       </div>
 
-      {/* Filters */}
+      
       <div style={s.filters}>
         <input style={s.search} placeholder="Search products…" value={search} onChange={(e) => setSearch(e.target.value)} />
         <select style={s.select} value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -106,12 +118,12 @@ export default function AdminProducts() {
         )}
       </div>
 
-      {/* Table */}
+      
       <div style={s.tableWrap}>
         <table style={s.table}>
           <thead>
             <tr style={s.thead}>
-              <th style={s.th}><input type="checkbox" checked={selected.length === products.length && products.length > 0} onChange={selectAll} /></th>
+              <th style={s.th}><input type="checkbox" checked={selected.length === filteredProducts.length && filteredProducts.length > 0} onChange={selectAll} /></th>
               <th style={s.th}>Product</th>
               <th style={s.th}>Category</th>
               <th style={s.th}>Price</th>
@@ -125,11 +137,7 @@ export default function AdminProducts() {
               Array.from({ length: 6 }, (_, i) => (
                 <tr key={i}><td colSpan={7} style={{ padding: "16px 20px" }}><div style={{ height: 20, background: "#1c1c21", borderRadius: 4, width: `${60 + i * 5}%` }} /></td></tr>
               ))
-            ) : products.filter((p: any) => {
-              const matchSearch = !search || p.title.toLowerCase().includes(search.toLowerCase());
-              const matchStatus = status === "all" || p.status === status;
-              return matchSearch && matchStatus;
-            }).map((p: any) => (
+            ) : filteredProducts.map((p: any) => (
               <tr key={p.id} style={s.tr}>
                 <td style={s.td}><input type="checkbox" checked={selected.includes(p.id)} onChange={() => toggleSelect(p.id)} /></td>
                 <td style={s.td}>
@@ -165,7 +173,7 @@ export default function AdminProducts() {
         </table>
       </div>
 
-      {/* Add product modal */}
+      
       {showAdd && (
         <div style={s.modalBg} onClick={() => setShowAdd(false)}>
           <div style={s.modal} onClick={(e) => e.stopPropagation()}>
