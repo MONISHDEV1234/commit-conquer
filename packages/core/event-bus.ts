@@ -104,10 +104,20 @@ export interface EventPayloadMap {
 
 // ─── EventBus ─────────────────────────────────────────────────────────────────
 
-class EventBus {
+export class EventBus {
   private listeners = new Map<string, Set<Handler<any>>>();
   private history: Array<{ event: string; payload: unknown; at: string }> = [];
   private maxHistory = 100;
+
+  /**
+   * Optional hook called whenever an async listener throws.
+   * Defaults to console.error. Override in tests or for custom error reporting.
+   *
+   * Example:
+   *   eventBus.onError = (event, err) => Sentry.captureException(err, { extra: { event } });
+   */
+  onError: (event: string, err: unknown) => void = (event, err) =>
+    console.error(`[EventBus] Handler error on "${event}":`, err);
 
   // ─── Subscribe ──────────────────────────────────────────────────────────────
   // Returns an unsubscribe function — call it to clean up listeners.
@@ -141,17 +151,27 @@ class EventBus {
     event: E,
     handler: Handler<EventPayloadMap[E]>,
   ): () => void {
-    const wrapper: Handler<EventPayloadMap[E]> = (payload) => {
-      handler(payload);
-      this.listeners.get(event)?.delete(wrapper);
+    // BUG FIX #108: wrapper must be async so that:
+    //   1. The handler is awaited — async errors are no longer silently dropped.
+    //   2. The wrapper removes itself AFTER the handler settles, not before,
+    //      eliminating the race condition where the wrapper was deleted before
+    //      the async handler had a chance to run to completion.
+    const wrapper: Handler<EventPayloadMap[E]> = async (payload) => {
+      try {
+        await handler(payload);
+      } finally {
+        // Always remove — even if the handler threw — so the listener is
+        // never called a second time.
+        this.listeners.get(event)?.delete(wrapper);
+      }
     };
     return this.on(event, wrapper);
   }
 
   // ─── Emit ───────────────────────────────────────────────────────────────────
   // Fires all handlers for the event.
-  // Errors in individual handlers are caught and logged — one bad handler
-  // won't block the rest.
+  // Errors in individual handlers are caught and routed to this.onError —
+  // one bad handler never blocks the rest.
 
   async emit<E extends EventName>(
     event: E,
@@ -166,14 +186,16 @@ class EventBus {
     const handlers = this.listeners.get(event);
     if (!handlers || handlers.size === 0) return;
 
+    // Snapshot the handler set so that once()-wrappers removing themselves
+    // mid-iteration do not affect the current emit cycle.
     const promises = [...handlers].map(async (handler) => {
       try {
         await handler(payload);
       } catch (err) {
-        console.error(
-          `[EventBus] Handler error on "${event}":`,
-          err instanceof Error ? err.message : err,
-        );
+        // BUG FIX #108: route the full error object to onError (not just
+        // err.message) so that stack traces and custom error properties
+        // are preserved for the caller / monitoring tools.
+        this.onError(event, err);
       }
     });
 
