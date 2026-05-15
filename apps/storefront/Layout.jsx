@@ -20,35 +20,37 @@ const CartDispatchCtx = createContext(null);
 function cartReducer(state, action) {
   switch (action.type) {
     case "ADD_ITEM": {
-      const key = (i) => `${i.id}__${i.variantId ?? "default"}`;
-      const exists = state.items.find((i) => key(i) === key(action.payload));
+      const payload = { ...action.payload };
+      if (!payload.variantId) payload.variantId = `unique_${Date.now()}_${Math.random()}`;
+      const key = (i) => `${i.id}__${i.variantId}`;
+      const exists = state.items.find((i) => key(i) === key(payload));
       if (exists) {
         return {
           ...state,
           items: state.items.map((i) =>
-            key(i) === key(action.payload)
-              ? { ...i, quantity: i.quantity + (action.payload.quantity ?? 1) }
+            key(i) === key(payload)
+              ? { ...i, quantity: i.quantity + (payload.quantity ?? 1) }
               : i
           ),
         };
       }
       return {
         ...state,
-        items: [...state.items, { ...action.payload, quantity: action.payload.quantity ?? 1 }],
+        items: [...state.items, { ...payload, quantity: payload.quantity ?? 1 }],
       };
     }
     case "REMOVE_ITEM": {
-      const key = `${action.payload.id}__${action.payload.variantId ?? "default"}`;
-      return { ...state, items: state.items.filter((i) => `${i.id}__${i.variantId ?? "default"}` !== key) };
+      const key = `${action.payload.id}__${action.payload.variantId}`;
+      return { ...state, items: state.items.filter((i) => `${i.id}__${i.variantId}` !== key) };
     }
     case "UPDATE_QTY": {
-      const key = `${action.payload.id}__${action.payload.variantId ?? "default"}`;
+      const key = `${action.payload.id}__${action.payload.variantId}`;
       if (action.payload.quantity <= 0)
-        return { ...state, items: state.items.filter((i) => `${i.id}__${i.variantId ?? "default"}` !== key) };
+        return { ...state, items: state.items.filter((i) => `${i.id}__${i.variantId}` !== key) };
       return {
         ...state,
         items: state.items.map((i) =>
-          `${i.id}__${i.variantId ?? "default"}` === key ? { ...i, quantity: action.payload.quantity } : i
+          `${i.id}__${i.variantId}` === key ? { ...i, quantity: action.payload.quantity } : i
         ),
       };
     }
