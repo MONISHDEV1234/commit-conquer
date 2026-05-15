@@ -347,7 +347,7 @@ export default function CheckoutForm() {
     setIsPlacing(true);
     setCheckoutError(null);
 
-    // Simulate backend checkout check
+    // Optional immediate frontend check for UX
     if (discountApplied) {
       const usedCodes = JSON.parse(localStorage.getItem('used_discount_codes') || '{}');
       if (usedCodes[email] === 'HACKATHON10') {
@@ -355,16 +355,77 @@ export default function CheckoutForm() {
          setCheckoutError(`Discount code "HACKATHON10" has already been used by this customer`);
          return;
       }
-      usedCodes[email] = 'HACKATHON10';
-      localStorage.setItem('used_discount_codes', JSON.stringify(usedCodes));
     }
     
-    await new Promise((r) => setTimeout(r, 1800));
-    const mockOrderId = `ORD-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
-    setOrderId(mockOrderId);
-    clearCart();
-    setStep("confirmed");
-    setIsPlacing(false);
+    try {
+      const API = "http://localhost:4000/api/store";
+
+      // 1. Create a cart
+      let res = await fetch(`${API}/carts`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email || "guest@example.com" })
+      });
+      if (!res.ok) throw new Error((await res.json()).error?.message || "Failed to create cart");
+      const { cart: backendCart } = await res.json();
+      const cartId = backendCart.id;
+
+      // 2. Add items
+      for (const item of items) {
+        res = await fetch(`${API}/carts/${cartId}/items`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ product_id: item.id, variant_id: item.variantId, quantity: item.quantity })
+        });
+        if (!res.ok) throw new Error((await res.json()).error?.message || "Failed to add item. " + (item.title || ""));
+      }
+
+      // 3. Set address
+      const addressObj = {
+        first_name: address.first_name,
+        last_name: address.last_name,
+        address_1: address.address_1,
+        city: address.city,
+        state: address.state,
+        postal_code: address.postal_code,
+        country_code: address.country_code || "US"
+      };
+      res = await fetch(`${API}/carts/${cartId}/shipping-address`, {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(addressObj)
+      });
+      if (!res.ok) throw new Error((await res.json()).error?.message || "Failed to set address");
+
+      // 4. Apply discount if used
+      if (discountApplied && discountCode) {
+        res = await fetch(`${API}/carts/${cartId}/discount`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ code: discountCode })
+        });
+        if (!res.ok) throw new Error((await res.json()).error?.message || "Failed to apply discount");
+      }
+
+      // 5. Place order
+      res = await fetch(`${API}/orders`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cart_id: cartId, payment_provider: "manual" })
+      });
+      if (!res.ok) throw new Error((await res.json()).error?.message || "Failed to place order");
+
+      const { order } = await res.json();
+      
+      if (discountApplied && email) {
+        const usedCodes = JSON.parse(localStorage.getItem('used_discount_codes') || '{}');
+        usedCodes[email] = "HACKATHON10";
+        localStorage.setItem('used_discount_codes', JSON.stringify(usedCodes));
+      }
+
+      setOrderId(order.id);
+      dispatch?.({ type: "CLEAR" });
+      setStep("confirmed");
+    } catch (err: any) {
+      setCheckoutError(err.message || "An error occurred during checkout");
+    } finally {
+      setIsPlacing(false);
+    }
   };
 
   const handleDiscount = () => {

@@ -66,7 +66,11 @@ export const CartService = {
   get(cartId: string): Cart {
     const cart = carts.get(cartId);
     if (!cart) throw new ServiceError("CART_NOT_FOUND", `Cart ${cartId} not found`);
-    return cart;
+    
+    // Auto-sync with product catalog on every fetch to prevent stale checkouts
+    const synced = _recalc(cart);
+    carts.set(cartId, synced);
+    return synced;
   },
 
   
@@ -321,10 +325,36 @@ export const CartService = {
 
 
 function _recalc(cart: Cart): Cart {
-  
+  // Validate all cart items against current product catalog (removes stale/deleted variants)
+  const validItems: CartItem[] = [];
+  for (const item of cart.items) {
+    const product = ProductModel.findById(item.product_id);
+    if (!product || product.status !== "published") continue;
+
+    const variant = product.variants.find((v) => v.id === item.variant_id);
+    if (!variant) continue;
+
+    // Always sync to latest price/metadata from product catalog
+    item.price = variant.price;
+    item.title = product.title;
+    item.variant_title = variant.title;
+    item.thumbnail = product.thumbnail;
+
+    // Cap quantity at available inventory
+    if (variant.inventory_quantity < item.quantity) {
+      item.quantity = variant.inventory_quantity;
+    }
+
+    if (item.quantity > 0) {
+      validItems.push(item);
+    }
+  }
+  cart.items = validItems;
+
+  // Safe numeric reduction (guards against NaN/undefined prices)
   const subtotal = cart.items.reduce((sum, item) => {
     const price = Number.isFinite(item.price) ? item.price : 0;
-    return sum + (price * item.quantity);
+    return sum + price * item.quantity;
   }, 0);
   
   let discountAmount = 0;
