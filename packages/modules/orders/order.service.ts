@@ -37,6 +37,7 @@ export interface RefundInput {
 // ─── In-Memory Order Store ────────────────────────────────────────────────────
 
 const orders = new Map<string, Order>();
+const customerOrdersIndex = new Map<string, Set<string>>();
 
 // ─── Seed a few demo orders so the admin UI isn't empty on first load ─────────
 
@@ -135,6 +136,14 @@ function _seedOrders() {
     };
 
     orders.set(order.id, order);
+    if (order.customer_id) {
+      let orderIds = customerOrdersIndex.get(order.customer_id);
+      if (!orderIds) {
+        orderIds = new Set<string>();
+        customerOrdersIndex.set(order.customer_id, orderIds);
+      }
+      orderIds.add(order.id);
+    }
   });
 }
 
@@ -156,16 +165,18 @@ export const OrderService = {
       customer_id,
     } = input;
 
-    let result = [...orders.values()];
+    let result: Order[];
+
+    if (customer_id) {
+      const orderIds = customerOrdersIndex.get(customer_id);
+      result = orderIds ? Array.from(orderIds).map(id => orders.get(id)!).filter(Boolean) : [];
+    } else {
+      result = [...orders.values()];
+    }
 
     // Filter by status
     if (status !== "all") {
       result = result.filter((o) => o.status === status);
-    }
-
-    // Filter by customer
-    if (customer_id) {
-      result = result.filter((o) => o.customer_id === customer_id);
     }
 
     // Search by order id, customer name, or email
@@ -252,6 +263,14 @@ export const OrderService = {
     };
 
     orders.set(order.id, order);
+    if (order.customer_id) {
+      let orderIds = customerOrdersIndex.get(order.customer_id);
+      if (!orderIds) {
+        orderIds = new Set<string>();
+        customerOrdersIndex.set(order.customer_id, orderIds);
+      }
+      orderIds.add(order.id);
+    }
 
     // 4. Decrement inventory — best-effort, don't block order creation
     for (const item of cart.items) {
@@ -478,5 +497,14 @@ function _update(id: string, changes: Partial<Order>): Order {
   };
 
   orders.set(id, updated);
+  if (updated.customer_id) {
+    let orderIds = customerOrdersIndex.get(updated.customer_id);
+    if (!orderIds) {
+      orderIds = new Set<string>();
+      customerOrdersIndex.set(updated.customer_id, orderIds);
+    }
+    orderIds.add(updated.id);
+  }
+
   return updated;
 }

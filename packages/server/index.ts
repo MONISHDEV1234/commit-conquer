@@ -635,12 +635,28 @@ admin.post("/orders/:id/cancel", async (req, res) => {
 // Body: { amount, reason? }
 admin.post("/orders/:id/refund", async (req, res) => {
   try {
-    const order = await OrderService.refund({
-      order_id: req.params.id,
-      amount:   req.body.amount,
-      reason:   req.body.reason,
+    const orderId = req.params.id;
+    const amount = req.body.amount;
+
+    const order = OrderService.getById(orderId);
+    let previousRefunds = 0;
+
+    const session = PaymentService.getSessionByOrderId(orderId);
+    if (session) {
+      const summary = PaymentService.summary(session.id);
+      previousRefunds = summary.refunded;
+    }
+
+    if (amount + previousRefunds > order.total) {
+      return res.status(400).json({ error: "Refund exceeds allowed maximum" });
+    }
+
+    const updatedOrder = await OrderService.refund({
+      order_id: orderId,
+      amount,
+      reason: req.body.reason,
     });
-    res.json({ order });
+    res.json({ order: updatedOrder });
   } catch (e) { handleErr(e, res); }
 });
 
