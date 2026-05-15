@@ -104,6 +104,7 @@ function Header() {
       <nav style={s.nav}>
         <NavLink to="/"           end style={navStyle}>Shop</NavLink>
         <NavLink to="/collections"    style={navStyle}>Collections</NavLink>
+        <NavLink to="/our-story"      style={navStyle}>Our Story</NavLink>
         <NavLink to="/about"          style={navStyle}>About</NavLink>
         <NavLink to="/account"        style={navStyle}>Account</NavLink>
         {/* Admin link — for hackathon convenience */}
@@ -138,6 +139,7 @@ function Footer() {
       <div style={s.footerInner}>
         <span style={{ color: "#555", fontSize: 13 }}>© {new Date().getFullYear()} Commit &amp; Conquer</span>
         <div style={{ display: "flex", gap: 20 }}>
+          <Link to="/our-story"   style={s.footerLink}>Our Story</Link>
           <Link to="/about"       style={s.footerLink}>About</Link>
           <Link to="/collections" style={s.footerLink}>Collections</Link>
           <Link to="/account"     style={s.footerLink}>Account</Link>
