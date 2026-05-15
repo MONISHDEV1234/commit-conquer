@@ -1,7 +1,8 @@
 
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useCartState, useCartDispatch } from "../Layout";
+import { useQueryClient } from "@tanstack/react-query";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface AddressForm {
@@ -268,9 +269,10 @@ const STEPS: { key: Step; label: string }[] = [
 
 
 export default function CheckoutForm() {
-  const { items, total } = useCartState() ?? { items: [], total: 0 };
+  const { items, total, cart_id } = useCartState() ?? { items: [], total: 0, cart_id: null };
   const dispatch = useCartDispatch();
   const clearCart = dispatch.clearCart;
+  const qc = useQueryClient();
 
   const [step, setStep] = useState<Step>("address");
   const [address, setAddress] = useState<AddressForm>(EMPTY_ADDRESS);
@@ -301,6 +303,20 @@ export default function CheckoutForm() {
     },
     [stepIdx]
   );
+
+  // Ensure cart data is fresh when entering checkout and before review
+  useEffect(() => {
+    if (cart_id) {
+      qc.refetchQueries({ queryKey: ["cart", cart_id], exact: true });
+    }
+  }, [cart_id, qc]);
+
+  // Refetch cart data again before showing review to prevent stale quantity hydration
+  useEffect(() => {
+    if (step === "review" && cart_id) {
+      qc.refetchQueries({ queryKey: ["cart", cart_id], exact: true });
+    }
+  }, [step, cart_id, qc]);
 
 
   const validateAddress = () => {
