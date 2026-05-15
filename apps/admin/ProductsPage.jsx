@@ -842,6 +842,7 @@ export default function ProductsPage() {
     mutationFn: () => deleteProducts([...selected]),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin", "products"] });
+      queryClient.invalidateQueries({ queryKey: ["products"] });
       setSelected(new Set());
       setConfirmOpen(false);
     },
